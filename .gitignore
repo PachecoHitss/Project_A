@@ -2,8 +2,7 @@
 venv/
 
 # Archivos de datos (pueden ser muy grandes y contienen datos sensibles)
-data/*.csv
-data/*.txt
+data/
 output/
 registros_con_caracteres_especiales.csv
 registros_fallidos.csv
