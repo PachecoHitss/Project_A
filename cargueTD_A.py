@@ -21,24 +21,31 @@ import sys
 
 # TABLAS TEMPORALES
 
-# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_migra'
+TABLE_NAME_TO_RECREATE = 'innovacion.TMP_MOTOR_NBA_GC'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_MOTOR_NBA_UPSELLING'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_MOTOR_NBA_TYT'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_potencial_migra'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_MOTOR_NBA_PILOTO'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_TMK_V2'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_TMK_V3'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CAMBIO_PLAN'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_UNICOS_INAPP_JUNIO'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_entregas_migra'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_CONVERGENCIA'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_CONVERGENCIA_PRE'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_UPSELLING'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_PREPAGO'
 # TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_TYT'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_TYT_NO'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_blindaje'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_migra'
 # TABLE_NAME_TO_RECREATE = 'innovacion.TBL_OPTIN_ACTIVO_SALESFORCE'
 # TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CONVERGENCIA_COSTA'
-# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_MIGRA'
-# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_UPSELLING'
 # TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CLARO_DRIVE_EPOCA'
 # TABLE_NAME_TO_RECREATE = 'innovacion.TBL_CARGUE_VAS'
 # TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CERTIFICA_VAS'
-# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CUPO_CARRO_ABANDONADO'
-# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_ACTUALIZA_INAPP_DEF'
-# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_ACTUALIZA_EMAIL_DEF'
-# TABLE_NAME_TO_RECREATE = 'innovacion.tbl_clientes_cinemark_Interesados'
-# TABLE_NAME_TO_RECREATE = 'innovacion.tbl_clientes_cinemark_remarketing'
-# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_EMPAQUETADOS_251031'
-# TABLE_NAME_TO_RECREATE = 'innovacion.TMP_CLARO_DRIVE_dejoUsar'
 
-TABLE_NAME_TO_RECREATE = 'innovacion.TBL_POTENCIAL_DIGITAL'
+# TABLE_NAME_TO_RECREATE = 'innovacion.TBL_POTENCIAL_DIGITAL'
 
 # TABLAS PERMANENTES
 # TABLE_NAME_TO_RECREATE = 'innovacion.TBL_CLARO_MUSICA_EMPAQ'
@@ -59,12 +66,13 @@ TABLE_NAME_TO_RECREATE = 'innovacion.TBL_POTENCIAL_DIGITAL'
 # TABLE_NAME_TO_RECREATE = 'innovacion.TMP_ADOPCION_EMPRESAS'
 
 BATCH_SIZE = 250000
-INPUT_DELIMITER = ';'
+INPUT_DELIMITER = ','
 
 # ATENCIÓN: Es muy probable que necesites ajustar las claves de este diccionario
 # basándote en la salida del diagnóstico.
 SCHEMA_DEFINITION = {
-    'TELE_NUMB'	:	'VARCHAR(50)'
+    'TELE_NUMB' :'VARCHAR(50)'
+    ,'bu_ganadora' : 'VARCHAR(50)'
     }
 PRIMARY_INDEX_COLUMN = 'TELE_NUMB'
 
@@ -133,24 +141,33 @@ def load_data(input_file_path, td_config):
     # --- Leer y Cargar Datos ---
     logging.info("Iniciando lectura y carga por lotes...")
     dtype_mapping = {col: str for col in SCHEMA_DEFINITION.keys()}
-    # Intentar leer el archivo completo con diferentes codificaciones
-    chunk_iterator = None
-    for enc in ['utf-16', 'utf-8', 'latin-1']:
+
+    # Detectar encoding por bytes crudos (evita falsos positivos de muestras pequeñas)
+    validated_encoding = 'latin-1'  # fallback seguro: mapea todos los bytes 0x00-0xFF
+    with open(input_file_path, 'rb') as f:
+        raw = f.read(32768)
+    if raw.startswith(b'\xff\xfe') or raw.startswith(b'\xfe\xff'):
+        validated_encoding = 'utf-16'
+        logging.info("Encoding detectado por BOM: utf-16.")
+    elif raw.startswith(b'\xef\xbb\xbf'):
+        validated_encoding = 'utf-8-sig'
+        logging.info("Encoding detectado por BOM: utf-8-sig.")
+    else:
         try:
-            chunk_iterator = pd.read_csv(
-                input_file_path, delimiter=INPUT_DELIMITER,
-                usecols=list(SCHEMA_DEFINITION.keys()), header=0,
-                dtype=dtype_mapping,
-                encoding=enc,
-                chunksize=BATCH_SIZE, on_bad_lines='warn'
-            )
-            logging.info(f"Lectura de datos exitosa con encoding {enc}.")
-            break
-        except Exception as e:
-            logging.warning(f"No se pudo leer el archivo con encoding {enc}: {e}")
-    if chunk_iterator is None:
-        logging.error("No se pudo leer el archivo con ningún encoding probado. Proceso abortado.")
-        return
+            raw.decode('utf-8')
+            validated_encoding = 'utf-8'
+            logging.info("Encoding detectado por validación de bytes: utf-8.")
+        except UnicodeDecodeError:
+            validated_encoding = 'latin-1'
+            logging.info("Encoding detectado por validación de bytes: latin-1 (contiene caracteres no-UTF8).")
+
+    chunk_iterator = pd.read_csv(
+        input_file_path, delimiter=INPUT_DELIMITER,
+        usecols=list(SCHEMA_DEFINITION.keys()), header=0,
+        dtype=dtype_mapping,
+        encoding=validated_encoding,
+        chunksize=BATCH_SIZE, on_bad_lines='warn'
+    )
 
     with teradatasql.connect(host=TD_HOST, user=TD_USER, password=TD_PASSWORD) as connection:
         with connection.cursor() as cursor:
@@ -161,10 +178,16 @@ def load_data(input_file_path, td_config):
             total_rows_inserted = 0
             for i, chunk in enumerate(chunk_iterator):
                 for col, dtype in SCHEMA_DEFINITION.items():
-                    chunk[col] = chunk[col].fillna('').astype(str).str.strip()
-                    if 'VARCHAR' in dtype.upper():
-                        chunk[col] = chunk[col].apply(sanitize_string)
-                
+                    if 'DECIMAL' in dtype.upper() or 'NUMERIC' in dtype.upper() or 'FLOAT' in dtype.upper():
+                        # Normalizar separador decimal y convertir a numérico; inválidos/vacíos → NULL
+                        chunk[col] = chunk[col].astype(str).str.strip().str.replace(',', '.', regex=False)
+                        chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
+                        chunk[col] = chunk[col].where(chunk[col].notna(), other=None)
+                    else:
+                        chunk[col] = chunk[col].fillna('').astype(str).str.strip()
+                        if 'VARCHAR' in dtype.upper():
+                            chunk[col] = chunk[col].apply(sanitize_string)
+
                 if chunk.empty: continue
                     
                 data_to_insert = list(chunk.itertuples(index=False, name=None))
